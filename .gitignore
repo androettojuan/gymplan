@@ -24,3 +24,5 @@ dist-ssr
 *.sw?
 
 .firebase/
+firestore-debug.log
+*-debug.log

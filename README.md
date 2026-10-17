@@ -15,6 +15,16 @@ npm run dev        # http://localhost:5173
 npm run build      # compila en dist/
 ```
 
+## Probar las reglas de seguridad
+
+Usa el emulador de Firestore (necesita Java; en WSL está en `~/.local/jdk/current`).
+
+```bash
+npm run test:rules
+```
+
+Cubre: crear gimnasios, invitaciones (de un uso, generales, vencidas, desactivadas, de profe), quién ve y edita cada plan, pesos de cada socio y cambios de rol.
+
 ## Publicar
 
 ```bash
