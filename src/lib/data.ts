@@ -1,5 +1,6 @@
 import {
-  collection, deleteDoc, doc, getDoc, Timestamp, updateDoc, writeBatch, setDoc,
+  collection, deleteDoc, doc, getDoc, getDocs, query, Timestamp, updateDoc, where, writeBatch, setDoc,
+  type DocumentReference,
 } from "firebase/firestore";
 import type { User } from "firebase/auth";
 import { db } from "../firebase";
@@ -79,6 +80,36 @@ export async function acceptInvite(inv: Invite, user: User) {
 }
 
 export const deleteInvite = (id: string) => deleteDoc(doc(db, "invites", id));
+
+export const setGymActive = (gymId: string, active: boolean) => updateDoc(doc(db, "gyms", gymId), { active });
+
+// Deletes a gym and everything in it: people, their notes, plans, history and links.
+// Firestore doesn't remove subcollections with their parent, so every document is listed and deleted.
+export async function deleteGymCompletely(gymId: string, onProgress?: (done: number) => void) {
+  const refs: DocumentReference[] = [];
+  const all = async (path: string) => (await getDocs(collection(db, path))).docs;
+  for (const m of await all(`gyms/${gymId}/members`)) {
+    for (const d of await all(`${m.ref.path}/logs`)) refs.push(d.ref);
+    for (const d of await all(`${m.ref.path}/body`)) refs.push(d.ref);
+    refs.push(doc(db, "users", m.id, "gyms", gymId), m.ref);
+  }
+  for (const sub of ["templates", "plans"]) {
+    for (const t of await all(`gyms/${gymId}/${sub}`)) {
+      for (const v of await all(`${t.ref.path}/versions`)) refs.push(v.ref);
+      refs.push(t.ref);
+    }
+  }
+  for (const d of await all(`gyms/${gymId}/exercises`)) refs.push(d.ref);
+  for (const d of (await getDocs(query(collection(db, "invites"), where("gymId", "==", gymId)))).docs) refs.push(d.ref);
+  refs.push(doc(db, "gyms", gymId));
+  for (let i = 0; i < refs.length; i += 400) {
+    const b = writeBatch(db);
+    refs.slice(i, i + 400).forEach(r => b.delete(r));
+    await b.commit();
+    onProgress?.(Math.min(i + 400, refs.length));
+  }
+  return refs.length;
+}
 
 // ---------- plans ----------
 export async function saveTemplate(gymId: string, tplId: string | null, plan: Plan, uid: string) {

@@ -30,6 +30,18 @@ export function GymRoutes() {
     );
   }
   const g = { ...gym.data, id: gymId } as GymT;
+  if (g.active === false) {
+    return (
+      <div className="wrap">
+        <TopBar title={g.name} />
+        <Empty title="Este gimnasio está desactivado">
+          <p>Por ahora no se puede usar GymPlan en {g.name}. Tus datos quedan guardados y vas a volver a verlos cuando se reactive.</p>
+          <p>Si tenés dudas, consultá en el gimnasio.</p>
+        </Empty>
+        <AccountCard />
+      </div>
+    );
+  }
   if (me.data.role === "member") return <MemberApp gym={g} />;
   return (
     <Routes>

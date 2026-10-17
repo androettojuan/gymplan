@@ -4,10 +4,10 @@ import { where } from "firebase/firestore";
 import { useAuth } from "../lib/auth";
 import { isSuperAdmin } from "../lib/admin";
 import { useCollection } from "../lib/hooks";
-import { createGymWithOwnerInvite, createInvite, inviteUrl } from "../lib/data";
+import { createGymWithOwnerInvite, createInvite, deleteGymCompletely, inviteUrl, setGymActive } from "../lib/data";
 import { fmtDate } from "../lib/format";
 import type { Gym, Invite, Member } from "../types";
-import { Loader, TopBar, useToast } from "../components/ui";
+import { ConfirmButton, Loader, TopBar, useToast } from "../components/ui";
 import { ShareLink } from "../components/ShareLink";
 
 const dateOf = (ms?: number) => (ms ? fmtDate(new Date(ms).toISOString().slice(0, 10)) : "");
@@ -64,10 +64,26 @@ export function AdminPage() {
 function GymRow({ gym }: { gym: Gym }) {
   const { user } = useAuth();
   const toast = useToast();
-  const owners = useCollection<Omit<Member, "uid">>(`gyms/${gym.id}/members`, [where("role", "==", "owner")], "owners");
+  const people = useCollection<Omit<Member, "uid">>(`gyms/${gym.id}/members`);
+  const owners = people.data.filter(m => m.role === "owner");
   const invites = useCollection<Omit<Invite, "id">>("invites", [where("gymId", "==", gym.id)], gym.id);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmName, setConfirmName] = useState("");
+  const [progress, setProgress] = useState<number | null>(null);
   const pending = invites.data.find(i => i.role === "owner" && i.active && !i.usedBy && i.expiresAt.toMillis() > Date.now());
+  const active = gym.active !== false;
+  const counts = { member: 0, staff: 0, owner: 0 };
+  people.data.forEach(m => { counts[m.role]++; });
+
+  const toggle = () => setGymActive(gym.id, !active)
+    .then(() => toast(active ? `${gym.name} quedó desactivado` : `${gym.name} quedó activo`))
+    .catch(() => toast("No se pudo cambiar el estado."));
+  const remove = async () => {
+    setProgress(0);
+    try { const n = await deleteGymCompletely(gym.id, setProgress); toast(`${gym.name} borrado (${n} registros)`); }
+    catch (err) { toast(`No se pudo borrar todo (${(err as { code?: string }).code || "error"}). Probá de nuevo.`); setProgress(null); }
+  };
 
   const newLink = async () => {
     if (!user) return;
@@ -78,17 +94,36 @@ function GymRow({ gym }: { gym: Gym }) {
   };
 
   return (
-    <div className="row gym-row">
+    <div className={`row gym-row ${active ? "" : "inactive"}`}>
       <span className="row-main"><b>{gym.name}</b>
         <small>
-          {owners.data.length ? `Dueño: ${owners.data.map(o => o.name || o.email).join(", ")}` : <span className="warn-text">Esperando que entre el dueño</span>}
-          {` · creado el ${dateOf(gym.createdAt)}`}
+          {owners.length ? `Dueño: ${owners.map(o => o.name || o.email).join(", ")}` : <span className="warn-text">Esperando que entre el dueño</span>}
+          {` · ${counts.member} socios · ${counts.staff} empleados · creado el ${dateOf(gym.createdAt)}`}
         </small></span>
+      <span className={`pill ${active ? "ok" : ""}`}>{active ? "Activo" : "Desactivado"}</span>
       <span className="row-actions">
-        {!owners.data.length && pending && <button className="mini" onClick={() => setShareUrl(inviteUrl(pending.id))}>Link del dueño</button>}
-        <button className="mini" onClick={newLink}>{owners.data.length ? "Sumar otro dueño" : "Link nuevo"}</button>
+        {active && !owners.length && pending && <button className="mini" onClick={() => setShareUrl(inviteUrl(pending.id))}>Link del dueño</button>}
+        {active && <button className="mini" onClick={newLink}>{owners.length ? "Sumar otro dueño" : "Link nuevo"}</button>}
+        {active
+          ? <ConfirmButton className="mini" confirmText="¿Desactivar?" onConfirm={toggle}>Desactivar</ConfirmButton>
+          : <button className="mini" onClick={toggle}>Activar</button>}
+        <button className="mini" onClick={() => { setDeleting(!deleting); setConfirmName(""); }}>Borrar</button>
       </span>
       {shareUrl && <div className="full-row"><ShareLink url={shareUrl} gymName={gym.name} role="owner" /></div>}
+      {deleting && (
+        <div className="full-row danger-box">
+          <p><b>Esto borra el gimnasio para siempre</b>: {people.data.length} personas pierden el acceso y se eliminan sus planes, pesos, historial y links. No se puede deshacer.</p>
+          {active && <p className="obs">Si solo querés cortarles el acceso por un tiempo, usá <b>Desactivar</b>: los datos quedan guardados.</p>}
+          <div className="field"><label htmlFor={`del-${gym.id}`}>Escribí "{gym.name}" para confirmar</label>
+            <input id={`del-${gym.id}`} autoComplete="off" value={confirmName} onChange={e => setConfirmName(e.target.value)} /></div>
+          <div className="links">
+            <button className="btn danger-solid" disabled={confirmName.trim() !== gym.name || progress != null} onClick={remove}>
+              {progress != null ? `Borrando… ${progress}` : "Borrar gimnasio"}
+            </button>
+            <button className="btn ghost" onClick={() => setDeleting(false)}>Cancelar</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

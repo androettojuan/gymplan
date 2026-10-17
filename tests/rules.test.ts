@@ -85,6 +85,44 @@ describe("súper admin", () => {
   });
 });
 
+describe("desactivar y borrar gimnasios", () => {
+  const off = () => env.withSecurityRulesDisabled(ctx => ctx.firestore().doc(`gyms/${GYM}`).update({ active: false }));
+  it("solo el súper admin desactiva un gimnasio; el dueño solo le cambia el nombre", async () => {
+    await assertFails(db("owner").doc(`gyms/${GYM}`).update({ active: false }));
+    await assertSucceeds(db("owner").doc(`gyms/${GYM}`).update({ name: "Nuevo nombre" }));
+    await assertSucceeds(superDb().doc(`gyms/${GYM}`).update({ active: false }));
+  });
+  it("con el gimnasio desactivado nadie usa planes ni pesos", async () => {
+    await off();
+    await assertFails(db("ana").doc(`gyms/${GYM}/templates/tplA`).get());
+    await assertFails(db("ana").doc(`gyms/${GYM}/members/ana/logs/press`).set({ name: "Press", entries: [] }));
+    await assertFails(db("coach").doc(`gyms/${GYM}/templates/tplA`).set(plan));
+    await assertFails(db("coach").collection(`gyms/${GYM}/members`).where("role", "==", "member").get());
+  });
+  it("con el gimnasio desactivado sus miembros igual ven que existe (para el aviso)", async () => {
+    await off();
+    await assertSucceeds(db("ana").doc(`gyms/${GYM}`).get());
+  });
+  it("con el gimnasio desactivado no se puede entrar con un link", async () => {
+    await off();
+    await assertFails(join("carla", "general1", "member", null, false));
+  });
+  it("al reactivarlo todo vuelve a funcionar", async () => {
+    await off();
+    await assertSucceeds(superDb().doc(`gyms/${GYM}`).update({ active: true }));
+    await assertSucceeds(db("ana").doc(`gyms/${GYM}/templates/tplA`).get());
+  });
+  it("solo el súper admin borra un gimnasio y todo lo que tiene adentro", async () => {
+    await assertFails(db("owner").doc(`gyms/${GYM}`).delete());
+    await assertFails(db("owner").doc(`gyms/${GYM}/members/beto/logs/press`).delete());
+    await assertSucceeds(superDb().collection(`gyms/${GYM}/members/beto/logs`).get());
+    await assertSucceeds(superDb().doc(`gyms/${GYM}/members/beto/logs/press`).delete());
+    await assertSucceeds(superDb().doc(`gyms/${GYM}/templates/tplA`).delete());
+    await assertSucceeds(superDb().doc("users/ana/gyms/gym1").delete());
+    await assertSucceeds(superDb().doc(`gyms/${GYM}`).delete());
+  });
+});
+
 describe("gimnasios", () => {
   it("nadie se puede hacer dueño sin el link del dueño", async () => {
     await assertFails(db("intruso").doc(`gyms/${GYM}/members/intruso`).set(member("owner")));

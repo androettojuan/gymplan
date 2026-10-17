@@ -11,8 +11,12 @@ service cloud.firestore {
         && request.auth.token.email in ['juan.androetto36@gmail.com'];
     }
     function memberPath(gymId, uid) { return /databases/$(database)/documents/gyms/$(gymId)/members/$(uid); }
+    function gymPath(gymId) { return /databases/$(database)/documents/gyms/$(gymId); }
     function invitePath(token) { return /databases/$(database)/documents/invites/$(token); }
-    function isMember(gymId) { return signedIn() && exists(memberPath(gymId, me())); }
+    // A super admin can switch a gym off: its people keep their data but can't use it until it's back on.
+    function gymActive(gymId) { return get(gymPath(gymId)).data.get('active', true) == true; }
+    function inGym(gymId) { return signedIn() && exists(memberPath(gymId, me())); }
+    function isMember(gymId) { return inGym(gymId) && gymActive(gymId); }
     function roleOf(gymId) { return get(memberPath(gymId, me())).data.role; }
     function isStaff(gymId) { return isMember(gymId) && roleOf(gymId) in ['owner', 'staff']; }
     function isOwner(gymId) { return isMember(gymId) && roleOf(gymId) == 'owner'; }
@@ -24,6 +28,7 @@ service cloud.firestore {
       let inviteId = request.resource.data.inviteId;
       let inv = get(invitePath(inviteId)).data;
       return inv.gymId == gymId
+        && gymActive(gymId)
         && inv.active == true
         && request.time < inv.expiresAt
         && request.resource.data.role == inv.role
@@ -32,12 +37,18 @@ service cloud.firestore {
             || (inv.get('usedBy', null) == null && getAfter(invitePath(inviteId)).data.get('usedBy', null) == me()));
     }
 
+    // Super admins can read and delete everything under a gym (to remove a gym completely).
+    match /gyms/{gymId}/{document=**} {
+      allow read, delete: if isSuper();
+    }
+
     match /gyms/{gymId} {
-      allow read: if isMember(gymId) || isSuper();
+      // Its people can still read the gym itself, so the app can tell them it was switched off.
+      allow read: if inGym(gymId) || isSuper();
       allow list: if isSuper();
       allow create: if isSuper() && request.resource.data.createdBy == me();
-      allow update: if isOwner(gymId) || isSuper();
-      allow delete: if false;
+      allow update: if (isOwner(gymId) && onlyChanges(['name'])) || isSuper();
+      allow delete: if isSuper();
 
       match /members/{uid} {
         allow read: if (signedIn() && uid == me()) || isStaff(gymId) || isSuper();
@@ -112,7 +123,7 @@ service cloud.firestore {
       allow read: if signedIn() && uid == me();
       allow create, update: if signedIn() && uid == me()
         && getAfter(memberPath(gymId, uid)).data.role == request.resource.data.role;
-      allow delete: if signedIn() && uid == me();
+      allow delete: if (signedIn() && uid == me()) || isSuper();
     }
   }
 }

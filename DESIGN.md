@@ -25,7 +25,7 @@ Una persona puede estar en varios gimnasios con roles distintos.
 ## Datos (Firestore)
 
 ```
-gyms/{gymId}                         { name, createdAt, createdBy }
+gyms/{gymId}                         { name, createdAt, createdBy, active? }
 gyms/{gymId}/members/{uid}           { role, name, email, photoURL, joinedAt, inviteId, templateId? }
 gyms/{gymId}/members/{uid}/logs/{exKey}   { name, entries: [{ d, w, r, n }] }      ← escribe el socio
 gyms/{gymId}/members/{uid}/body/main      { entries: [{ d, w }] }                  ← escribe el socio
@@ -55,7 +55,12 @@ Alguien que entra sin invitación ve un aviso de que necesita el link de su gimn
 
 ## Crear un gimnasio
 
-Solo el súper admin, desde `/admin`. En un batch se crea `gyms/{gymId}` (`{ name, createdAt, createdBy }`) y una invitación de rol `owner`. El dueño entra con ese link como cualquier otro usuario. Desde **Equipo** el dueño agrega a sus empleados.
+Desde `/admin` el súper admin también puede:
+
+- **Desactivar** un gimnasio (`active: false`): las reglas cortan todo acceso a planes, pesos y links de ese gimnasio, pero los datos quedan. Sus miembros ven un aviso. Se puede reactivar.
+- **Borrar** un gimnasio: la app lista y elimina cada documento (miembros, pesos, plantillas, planes, versiones, links e índices `users/{uid}/gyms/{gymId}`), porque Firestore no borra subcolecciones solas. Pide escribir el nombre del gimnasio para confirmar.
+
+Solo el súper admin crea gimnasios, desde `/admin`. En un batch se crea `gyms/{gymId}` (`{ name, createdAt, createdBy }`) y una invitación de rol `owner`. El dueño entra con ese link como cualquier otro usuario. Desde **Equipo** el dueño agrega a sus empleados.
 
 ## Tecnología
 

@@ -35,6 +35,8 @@ export interface Gym {
   name: string;
   createdAt: number;
   createdBy: string;
+  // Missing means active. Only a super admin switches it.
+  active?: boolean;
 }
 
 export interface Member {

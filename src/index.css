@@ -102,6 +102,9 @@ a { color: var(--accent); }
 .row-main b { overflow-wrap: anywhere; }
 .row-main small { color: var(--muted); font-size: .82rem; }
 .full-row { flex-basis: 100%; }
+.gym-row.inactive .row-main b { color: var(--muted); }
+.danger-box { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent-soft); font-size: .92rem; }
+.btn.danger-solid { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .admin-card { flex-direction: row; align-items: center; text-decoration: none; color: var(--ink); border-color: var(--accent); background: var(--accent-soft); }
 .admin-card .row-main b { font-size: 1.1rem; }
 .invite-needed { align-items: flex-start; }
