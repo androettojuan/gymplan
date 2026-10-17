@@ -7,6 +7,7 @@ import { WEEKDAYS, MONTHS } from "../lib/format";
 import { BottomTabs, Empty, Loader, TopBar, usePersistentState, useToast } from "../components/ui";
 import { BodyCard, LiftsCard, TrainingView, type Logs } from "../components/Training";
 import { MemberDetail, PersonalPlanPage, StaffHome, TemplatePage } from "./Staff";
+import { AccountCard } from "../components/AccountCard";
 
 const todayLabel = () => { const d = new Date(); return `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`; };
 
@@ -56,7 +57,7 @@ export function useMemberNotes(gymId: string, uid: string | null) {
 }
 
 function MemberApp({ gym }: { gym: GymT }) {
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
   const toast = useToast();
   const uid = user!.uid;
   const me = useDoc<Omit<Member, "uid">>(`gyms/${gym.id}/members/${uid}`);
@@ -81,14 +82,7 @@ function MemberApp({ gym }: { gym: GymT }) {
         <>
           <BodyCard entries={notes.body} onSave={entries => { saveBody(gym.id, uid, entries).catch(fail); toast("Peso guardado"); }} />
           <LiftsCard plan={plan} logs={notes.logs} emptyText="Cuando anotes pesos en tus ejercicios, acá vas a ver cómo van subiendo." />
-          <section className="card subtle">
-            <h2>Cuenta</h2>
-            <p className="obs">{user?.displayName} · {user?.email}</p>
-            <div className="links">
-              <Link className="btn ghost" to="/" onClick={() => sessionStorage.setItem("gp.stayHome", "1")}>Mis gimnasios</Link>
-              <button className="btn ghost" onClick={signOut}>Salir</button>
-            </div>
-          </section>
+          <AccountCard />
         </>
       )}
       <BottomTabs tabs={[["train", "Entrenar"], ["progress", "Progreso"]]} value={tab} onChange={setTab} />

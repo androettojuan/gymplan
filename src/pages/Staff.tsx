@@ -14,6 +14,7 @@ import { BottomTabs, ConfirmButton, Empty, Loader, TopBar, usePersistentState, u
 import { PlanEditor, blankPlan, buildLibrary } from "../components/PlanEditor";
 import { BodyCard, LiftsCard } from "../components/Training";
 import { ShareLink } from "../components/ShareLink";
+import { AccountCard } from "../components/AccountCard";
 import { useMemberNotes, useMemberPlan } from "./Gym";
 
 type StaffTab = "members" | "plans" | "invite" | "team";
@@ -21,7 +22,7 @@ const dateOf = (ms?: number) => (ms ? fmtDate(new Date(ms).toISOString().slice(0
 const exCount = (p: Plan) => p.days.reduce((n, d) => n + d.exercises.length, 0);
 
 export function StaffHome({ gym, role }: { gym: Gym; role: Role }) {
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
   const [tab, setTab] = usePersistentState<StaffTab>(`gp.${gym.id}.staffTab`, "members");
   const members = useCollection<Omit<Member, "uid">>(`gyms/${gym.id}/members`, [where("role", "==", "member")], "members");
   const templates = useCollection<Omit<Template, "id">>(`gyms/${gym.id}/templates`);
@@ -33,13 +34,7 @@ export function StaffHome({ gym, role }: { gym: Gym; role: Role }) {
       {tab === "members" && <MembersTab gym={gym} members={members.data} loading={members.loading} tplName={tplName} />}
       {tab === "plans" && <PlansTab gym={gym} templates={templates.data} loading={templates.loading} members={members.data} />}
       {tab === "invite" && <InviteTab gym={gym} templates={templates.data} />}
-      {tab === "team" && <TeamTab gym={gym} role={role} />}
-      <section className="card subtle">
-        <div className="links">
-          <Link className="btn ghost" to="/" onClick={() => sessionStorage.setItem("gp.stayHome", "1")}>Mis gimnasios</Link>
-          <button className="btn ghost" onClick={signOut}>Salir</button>
-        </div>
-      </section>
+      {tab === "team" && <><TeamTab gym={gym} role={role} /><AccountCard /></>}
       <BottomTabs<StaffTab> tabs={[["members", "Socios"], ["plans", "Planes"], ["invite", "Invitar"], ["team", "Equipo"]]} value={tab} onChange={setTab} />
     </div>
   );
