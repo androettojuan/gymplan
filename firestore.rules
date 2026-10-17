@@ -1,0 +1,114 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+    function memberPath(gymId, uid) { return /databases/$(database)/documents/gyms/$(gymId)/members/$(uid); }
+    function gymPath(gymId) { return /databases/$(database)/documents/gyms/$(gymId); }
+    function invitePath(token) { return /databases/$(database)/documents/invites/$(token); }
+    function isMember(gymId) { return signedIn() && exists(memberPath(gymId, me())); }
+    function roleOf(gymId) { return get(memberPath(gymId, me())).data.role; }
+    function isStaff(gymId) { return isMember(gymId) && roleOf(gymId) in ['owner', 'staff']; }
+    function isOwner(gymId) { return isMember(gymId) && roleOf(gymId) == 'owner'; }
+    function onlyChanges(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
+
+    // Joining through an invite link: the invite must exist, be active and current, match the gym,
+    // role and assigned template, and a single-use invite must be marked as used by this person in the same batch.
+    function validInviteJoin(gymId) {
+      let inviteId = request.resource.data.inviteId;
+      let inv = get(invitePath(inviteId)).data;
+      return inv.gymId == gymId
+        && inv.active == true
+        && request.time < inv.expiresAt
+        && request.resource.data.role == inv.role
+        && request.resource.data.get('templateId', null) == inv.get('templateId', null)
+        && (inv.single == false
+            || (inv.get('usedBy', null) == null && getAfter(invitePath(inviteId)).data.get('usedBy', null) == me()));
+    }
+
+    match /gyms/{gymId} {
+      allow read: if isMember(gymId);
+      // Whoever creates a gym becomes its owner in the same batch.
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == me()
+        && getAfter(memberPath(gymId, me())).data.role == 'owner';
+      allow update: if isOwner(gymId) && request.resource.data.ownerUid == resource.data.ownerUid;
+      allow delete: if false;
+
+      match /members/{uid} {
+        allow read: if (signedIn() && uid == me()) || isStaff(gymId);
+        allow create: if signedIn() && uid == me() && (
+          (request.resource.data.role == 'owner'
+            && !exists(gymPath(gymId))
+            && getAfter(gymPath(gymId)).data.ownerUid == me())
+          || validInviteJoin(gymId));
+        allow update: if (isStaff(gymId) && resource.data.role == 'member' && onlyChanges(['templateId']))
+          || (isOwner(gymId) && uid != me() && request.resource.data.role in ['staff', 'member'])
+          || (signedIn() && uid == me() && onlyChanges(['name', 'photoURL']));
+        allow delete: if (isOwner(gymId) && uid != me())
+          || (isStaff(gymId) && resource.data.role == 'member')
+          || (signedIn() && uid == me() && resource.data.role != 'owner');
+
+        match /logs/{exKey} {
+          allow read: if (signedIn() && uid == me()) || isStaff(gymId);
+          allow write: if signedIn() && uid == me() && isMember(gymId);
+        }
+        match /body/{docId} {
+          allow read: if (signedIn() && uid == me()) || isStaff(gymId);
+          allow write: if signedIn() && uid == me() && isMember(gymId);
+        }
+      }
+
+      match /exercises/{exId} {
+        allow read: if isMember(gymId);
+        allow write: if isStaff(gymId);
+      }
+
+      match /templates/{tplId} {
+        allow read: if isStaff(gymId)
+          || (isMember(gymId) && get(memberPath(gymId, me())).data.get('templateId', null) == tplId);
+        allow write: if isStaff(gymId);
+        match /versions/{vId} {
+          allow read, create: if isStaff(gymId);
+        }
+      }
+
+      match /plans/{uid} {
+        allow read: if (signedIn() && uid == me() && isMember(gymId)) || isStaff(gymId);
+        allow write: if isStaff(gymId);
+        match /versions/{vId} {
+          allow read, create: if isStaff(gymId);
+        }
+      }
+    }
+
+    match /invites/{token} {
+      // Anyone signed in who has the link can open it; only the gym's staff can list them.
+      allow get: if signedIn();
+      allow list: if signedIn() && isStaff(resource.data.gymId);
+      allow create: if signedIn()
+        && request.resource.data.createdBy == me()
+        && isStaff(request.resource.data.gymId)
+        && (request.resource.data.role == 'member'
+            || (request.resource.data.role == 'staff'
+                && request.resource.data.single == true
+                && isOwner(request.resource.data.gymId)));
+      allow update: if (signedIn() && isStaff(resource.data.gymId) && onlyChanges(['active']))
+        || (signedIn()
+            && resource.data.single == true
+            && resource.data.get('usedBy', null) == null
+            && onlyChanges(['usedBy'])
+            && request.resource.data.usedBy == me()
+            && getAfter(memberPath(resource.data.gymId, me())).data.inviteId == token);
+      allow delete: if signedIn() && isStaff(resource.data.gymId);
+    }
+
+    match /users/{uid}/gyms/{gymId} {
+      allow read: if signedIn() && uid == me();
+      allow create, update: if signedIn() && uid == me()
+        && getAfter(memberPath(gymId, uid)).data.role == request.resource.data.role;
+      allow delete: if signedIn() && uid == me();
+    }
+  }
+}
