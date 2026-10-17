@@ -8,7 +8,10 @@ import "firebase/compat/firestore";
 let env: RulesTestEnvironment;
 const GYM = "gym1";
 const ts = (msFromNow: number) => firebase.firestore.Timestamp.fromMillis(Date.now() + msFromNow);
-const db = (uid?: string) => (uid ? env.authenticatedContext(uid, { email: `${uid}@test.com` }) : env.unauthenticatedContext()).firestore();
+const SUPER = "juan.androetto36@gmail.com";
+const db = (uid?: string, email = `${uid}@test.com`, verified = true) =>
+  (uid ? env.authenticatedContext(uid, { email, email_verified: verified }) : env.unauthenticatedContext()).firestore();
+const superDb = () => db("super", SUPER);
 const member = (role: string, extra: object = {}) => ({ role, name: "", email: "", photoURL: "", joinedAt: 1, inviteId: null, templateId: null, ...extra });
 const invite = (extra: object = {}) => ({
   gymId: GYM, gymName: "Gym", role: "member", templateId: "tplA", single: true, label: "", usedBy: null,
@@ -37,7 +40,7 @@ beforeEach(async () => {
   await env.clearFirestore();
   await env.withSecurityRulesDisabled(async ctx => {
     const f = ctx.firestore();
-    await f.doc(`gyms/${GYM}`).set({ name: "Gym", ownerUid: "owner", createdAt: 1 });
+    await f.doc(`gyms/${GYM}`).set({ name: "Gym", createdAt: 1, createdBy: "super" });
     await f.doc(`gyms/${GYM}/members/owner`).set(member("owner"));
     await f.doc(`gyms/${GYM}/members/coach`).set(member("staff"));
     await f.doc(`gyms/${GYM}/members/ana`).set(member("member", { templateId: "tplA" }));
@@ -50,20 +53,42 @@ beforeEach(async () => {
     await f.doc("invites/expired1").set(invite({ expiresAt: ts(-1000) }));
     await f.doc("invites/off1").set(invite({ active: false }));
     await f.doc("invites/staff1").set(invite({ role: "staff", templateId: null }));
+    await f.doc("invites/owner1").set(invite({ role: "owner", templateId: null, createdBy: "super" }));
+  });
+});
+
+describe("súper admin", () => {
+  it("solo el súper admin crea gimnasios, junto con el link del dueño", async () => {
+    const d = superDb();
+    const b = d.batch();
+    b.set(d.doc("gyms/g2"), { name: "Otro", createdAt: 1, createdBy: "super" });
+    b.set(d.doc("invites/own2"), invite({ gymId: "g2", role: "owner", templateId: null, createdBy: "super" }));
+    await assertSucceeds(b.commit());
+  });
+  it("un usuario común no puede crear gimnasios", async () => {
+    await assertFails(db("nuevo").doc("gyms/g3").set({ name: "X", createdAt: 1, createdBy: "nuevo" }));
+  });
+  it("el email del súper admin tiene que estar verificado", async () => {
+    await assertFails(db("falso", SUPER, false).doc("gyms/g4").set({ name: "X", createdAt: 1, createdBy: "falso" }));
+  });
+  it("solo el súper admin ve la lista de gimnasios", async () => {
+    await assertSucceeds(superDb().collection("gyms").get());
+    await assertFails(db("owner").collection("gyms").get());
+  });
+  it("solo el súper admin crea links de dueño", async () => {
+    await assertSucceeds(superDb().doc("invites/o2").set(invite({ role: "owner", templateId: null, createdBy: "super" })));
+    await assertFails(db("owner").doc("invites/o3").set(invite({ role: "owner", templateId: null, createdBy: "owner" })));
+  });
+  it("con el link del dueño se entra como dueño, una sola vez", async () => {
+    await assertSucceeds(join("marcelo", "owner1", "owner", null, true));
+    await assertFails(join("otro", "owner1", "owner", null, true));
   });
 });
 
 describe("gimnasios", () => {
-  it("cualquiera con sesión puede crear su gimnasio y queda como dueño", async () => {
-    const d = db("nuevo");
-    const b = d.batch();
-    b.set(d.doc("gyms/g2"), { name: "Otro", ownerUid: "nuevo", createdAt: 1 });
-    b.set(d.doc("gyms/g2/members/nuevo"), member("owner"));
-    b.set(d.doc("users/nuevo/gyms/g2"), { role: "owner", gymName: "Otro", joinedAt: 1 });
-    await assertSucceeds(b.commit());
-  });
-  it("nadie se puede hacer dueño de un gimnasio que ya existe", async () => {
+  it("nadie se puede hacer dueño sin el link del dueño", async () => {
     await assertFails(db("intruso").doc(`gyms/${GYM}/members/intruso`).set(member("owner")));
+    await assertFails(join("intruso", "single1", "owner", "tplA", true));
   });
   it("un desconocido no puede leer el gimnasio", async () => {
     await assertFails(db("intruso").doc(`gyms/${GYM}`).get());
@@ -79,7 +104,7 @@ describe("invitaciones", () => {
     await assertSucceeds(db("coach").doc("invites/n1").set(invite({ createdBy: "coach" })));
     await assertFails(db("ana").doc("invites/n2").set(invite({ createdBy: "ana" })));
   });
-  it("solo el dueño invita profes", async () => {
+  it("solo el dueño agrega empleados", async () => {
     await assertSucceeds(db("owner").doc("invites/s1").set(invite({ role: "staff", createdBy: "owner", templateId: null })));
     await assertFails(db("coach").doc("invites/s2").set(invite({ role: "staff", createdBy: "coach", templateId: null })));
   });
@@ -168,5 +193,8 @@ describe("roles", () => {
   });
   it("el dueño no se puede dar de baja a sí mismo", async () => {
     await assertFails(db("owner").doc(`gyms/${GYM}/members/owner`).delete());
+  });
+  it("el dueño quita empleados", async () => {
+    await assertSucceeds(db("owner").doc(`gyms/${GYM}/members/coach`).delete());
   });
 });

@@ -6,8 +6,9 @@ App para gimnasios: el dueño y los profes arman planes de entrenamiento y se lo
 
 | Rol | Puede |
 |---|---|
-| `owner` (dueño) | Todo lo de `staff`, más: invitar y quitar profes, cambiar roles, editar los datos del gimnasio. |
-| `staff` (profe / empleado) | Crear y editar ejercicios, plantillas y planes; invitar socios; ver socios y su progreso. |
+| Súper admin (global) | Crear gimnasios y generar el link del dueño de cada uno. Se define por email en `firestore.rules` (`isSuper`) y en `src/lib/admin.ts`. |
+| `owner` (dueño) | Todo lo de `staff`, más: agregar y quitar empleados, cambiar roles, editar los datos del gimnasio. |
+| `staff` (empleado / profe) | Crear y editar plantillas y planes; invitar socios; ver socios y su progreso. |
 | `member` (socio) | Ver su plan, anotar sus pesos y su peso corporal, ver su progreso. |
 
 Una persona puede estar en varios gimnasios con roles distintos.
@@ -24,7 +25,7 @@ Una persona puede estar en varios gimnasios con roles distintos.
 ## Datos (Firestore)
 
 ```
-gyms/{gymId}                         { name, ownerUid, createdAt }
+gyms/{gymId}                         { name, createdAt, createdBy }
 gyms/{gymId}/members/{uid}           { role, name, email, photoURL, joinedAt, inviteId, templateId? }
 gyms/{gymId}/members/{uid}/logs/{exKey}   { name, entries: [{ d, w, r, n }] }      ← escribe el socio
 gyms/{gymId}/members/{uid}/body/main      { entries: [{ d, w }] }                  ← escribe el socio
@@ -48,11 +49,13 @@ Todo se valida con las reglas de Firestore, sin Cloud Functions (así se puede u
 3. En un solo batch la app crea `gyms/{gymId}/members/{uid}` y `users/{uid}/gyms/{gymId}`. Si la invitación es de un solo uso, además marca `usedBy`.
 4. Las reglas verifican que la invitación exista, esté activa y vigente, sea del mismo gimnasio, que el rol coincida y, si es de un solo uso, que no se haya usado.
 
-Las invitaciones de **profe** son siempre de un solo uso. Las de **socio** pueden ser de un solo uso (un link por persona, con plantilla asignada) o generales (un link del gimnasio para cualquier socio nuevo).
+Quién crea cada tipo de link: los de **socio**, el dueño o un empleado; los de **empleado**, solo el dueño; los de **dueño**, solo el súper admin. Los de empleado y dueño son siempre de un solo uso. Los de socio pueden ser de un solo uso (un link por persona, con plantilla asignada) o generales (un link del gimnasio para cualquier socio nuevo).
+
+Alguien que entra sin invitación ve un aviso de que necesita el link de su gimnasio (normalmente por WhatsApp).
 
 ## Crear un gimnasio
 
-Cualquier usuario con sesión iniciada puede crear un gimnasio y queda como `owner` (batch: `gyms/{gymId}` + `members/{uid}` con rol `owner` + `users/{uid}/gyms/{gymId}`). Más adelante se puede restringir a cuentas aprobadas.
+Solo el súper admin, desde `/admin`. En un batch se crea `gyms/{gymId}` (`{ name, createdAt, createdBy }`) y una invitación de rol `owner`. El dueño entra con ese link como cualquier otro usuario. Desde **Equipo** el dueño agrega a sus empleados.
 
 ## Tecnología
 
@@ -64,5 +67,5 @@ Cualquier usuario con sesión iniciada puede crear un gimnasio y queda como `own
 ## Pendiente / más adelante
 
 - Política de privacidad (Ley 25.326, datos personales de los socios).
-- Aprobar quién puede crear gimnasios; cobro por gimnasio.
+- Cobro por gimnasio.
 - Notificaciones cuando el profe actualiza el plan.

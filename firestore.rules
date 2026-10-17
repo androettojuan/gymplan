@@ -4,8 +4,13 @@ service cloud.firestore {
 
     function signedIn() { return request.auth != null; }
     function me() { return request.auth.uid; }
+    // Super admins create gyms and hand each one to its owner. Keep in sync with src/lib/admin.ts.
+    function isSuper() {
+      return signedIn()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email in ['juan.androetto36@gmail.com'];
+    }
     function memberPath(gymId, uid) { return /databases/$(database)/documents/gyms/$(gymId)/members/$(uid); }
-    function gymPath(gymId) { return /databases/$(database)/documents/gyms/$(gymId); }
     function invitePath(token) { return /databases/$(database)/documents/invites/$(token); }
     function isMember(gymId) { return signedIn() && exists(memberPath(gymId, me())); }
     function roleOf(gymId) { return get(memberPath(gymId, me())).data.role; }
@@ -28,27 +33,23 @@ service cloud.firestore {
     }
 
     match /gyms/{gymId} {
-      allow read: if isMember(gymId);
-      // Whoever creates a gym becomes its owner in the same batch.
-      allow create: if signedIn()
-        && request.resource.data.ownerUid == me()
-        && getAfter(memberPath(gymId, me())).data.role == 'owner';
-      allow update: if isOwner(gymId) && request.resource.data.ownerUid == resource.data.ownerUid;
+      allow read: if isMember(gymId) || isSuper();
+      allow list: if isSuper();
+      allow create: if isSuper() && request.resource.data.createdBy == me();
+      allow update: if isOwner(gymId) || isSuper();
       allow delete: if false;
 
       match /members/{uid} {
-        allow read: if (signedIn() && uid == me()) || isStaff(gymId);
-        allow create: if signedIn() && uid == me() && (
-          (request.resource.data.role == 'owner'
-            && !exists(gymPath(gymId))
-            && getAfter(gymPath(gymId)).data.ownerUid == me())
-          || validInviteJoin(gymId));
+        allow read: if (signedIn() && uid == me()) || isStaff(gymId) || isSuper();
+        // Everyone, owners included, joins through an invite link.
+        allow create: if signedIn() && uid == me() && validInviteJoin(gymId);
         allow update: if (isStaff(gymId) && resource.data.role == 'member' && onlyChanges(['templateId']))
-          || (isOwner(gymId) && uid != me() && request.resource.data.role in ['staff', 'member'])
+          || (isOwner(gymId) && uid != me() && resource.data.role != 'owner' && request.resource.data.role in ['staff', 'member'])
           || (signedIn() && uid == me() && onlyChanges(['name', 'photoURL']));
-        allow delete: if (isOwner(gymId) && uid != me())
+        allow delete: if (isOwner(gymId) && uid != me() && resource.data.role != 'owner')
           || (isStaff(gymId) && resource.data.role == 'member')
-          || (signedIn() && uid == me() && resource.data.role != 'owner');
+          || (signedIn() && uid == me() && resource.data.role != 'owner')
+          || isSuper();
 
         match /logs/{exKey} {
           allow read: if (signedIn() && uid == me()) || isStaff(gymId);
@@ -84,24 +85,23 @@ service cloud.firestore {
     }
 
     match /invites/{token} {
-      // Anyone signed in who has the link can open it; only the gym's staff can list them.
+      // Anyone signed in who has the link can open it; only the gym's staff (or a super admin) can list them.
       allow get: if signedIn();
-      allow list: if signedIn() && isStaff(resource.data.gymId);
+      allow list: if signedIn() && (isStaff(resource.data.gymId) || isSuper());
+      // Members are invited by staff, employees by the owner, owners by a super admin.
       allow create: if signedIn()
         && request.resource.data.createdBy == me()
-        && isStaff(request.resource.data.gymId)
-        && (request.resource.data.role == 'member'
-            || (request.resource.data.role == 'staff'
-                && request.resource.data.single == true
-                && isOwner(request.resource.data.gymId)));
-      allow update: if (signedIn() && isStaff(resource.data.gymId) && onlyChanges(['active']))
+        && ((request.resource.data.role == 'member' && isStaff(request.resource.data.gymId))
+            || (request.resource.data.role == 'staff' && request.resource.data.single == true && isOwner(request.resource.data.gymId))
+            || (request.resource.data.role == 'owner' && request.resource.data.single == true && isSuper()));
+      allow update: if (signedIn() && (isStaff(resource.data.gymId) || isSuper()) && onlyChanges(['active']))
         || (signedIn()
             && resource.data.single == true
             && resource.data.get('usedBy', null) == null
             && onlyChanges(['usedBy'])
             && request.resource.data.usedBy == me()
             && getAfter(memberPath(resource.data.gymId, me())).data.inviteId == token);
-      allow delete: if signedIn() && isStaff(resource.data.gymId);
+      allow delete: if signedIn() && (isStaff(resource.data.gymId) || isSuper());
     }
 
     match /users/{uid}/gyms/{gymId} {

@@ -1,9 +1,10 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { orderBy } from "firebase/firestore";
 import { useAuth } from "../lib/auth";
+import { isSuperAdmin } from "../lib/admin";
 import { useCollection } from "../lib/hooks";
-import { acceptInvite, createGym, getInvite, inviteProblem } from "../lib/data";
+import { acceptInvite, getInvite, inviteProblem } from "../lib/data";
 import type { Invite, UserGym } from "../types";
 import { ROLE_LABEL } from "../types";
 import { Empty, Loader, TopBar, useToast } from "../components/ui";
@@ -25,11 +26,18 @@ export function Login({ lead }: { lead?: string }) {
 export function Home() {
   const { user, signOut } = useAuth();
   const gyms = useCollection<UserGym>(user ? `users/${user.uid}/gyms` : null, [orderBy("joinedAt", "desc")], "joined");
+  const superAdmin = isSuperAdmin(user);
   if (gyms.loading) return <Loader />;
-  if (gyms.data.length === 1 && !sessionStorage.getItem("gp.stayHome")) return <Navigate to={`/g/${gyms.data[0].id}`} replace />;
+  if (gyms.data.length === 1 && !superAdmin && !sessionStorage.getItem("gp.stayHome")) return <Navigate to={`/g/${gyms.data[0].id}`} replace />;
   return (
     <div className="wrap">
       <TopBar title="GymPlan" sub={user?.displayName || user?.email} />
+      {superAdmin && (
+        <Link className="card admin-card" to="/admin">
+          <span className="row-main"><span className="eyebrow">Súper admin</span><b>Administrar gimnasios</b><small>Crear gimnasios y mandarle el link a cada dueño</small></span>
+          <span aria-hidden="true">›</span>
+        </Link>
+      )}
       {gyms.data.length ? (
         <section className="card">
           <h2>Tus gimnasios</h2>
@@ -41,42 +49,17 @@ export function Home() {
             ))}
           </div>
         </section>
-      ) : (
-        <Empty title="Todavía no estás en ningún gimnasio">
-          <p>Si sos socio o profe, abrí el link de invitación que te mandó tu gimnasio.</p>
-        </Empty>
+      ) : !superAdmin && (
+        <section className="hero-card invite-needed">
+          <svg className="invite-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" /><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
+          </svg>
+          <h2>Necesitás la invitación de tu gimnasio</h2>
+          <p>Para ver tu plan, pedile a tu gimnasio el link de invitación. Normalmente te lo mandan por <b>WhatsApp</b>.</p>
+          <p className="obs">Cuando lo tengas, abrilo desde este celular y vas a entrar directo a tu plan con esta cuenta ({user?.email}).</p>
+        </section>
       )}
-      <section className="card subtle">
-        <h2>¿Tenés un gimnasio?</h2>
-        <p className="obs">Creá tu gimnasio, armá los planes y mandáselos a tus socios con un link.</p>
-        <div className="links"><Link className="btn" to="/nuevo">Crear gimnasio</Link><button className="btn ghost" onClick={signOut}>Salir</button></div>
-      </section>
-    </div>
-  );
-}
-
-export function NewGym() {
-  const { user } = useAuth();
-  const nav = useNavigate();
-  const toast = useToast();
-  const [name, setName] = useState("");
-  const [busy, setBusy] = useState(false);
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!user || !name.trim()) return;
-    setBusy(true);
-    try { const id = await createGym(user, name); toast("Gimnasio creado"); nav(`/g/${id}`, { replace: true }); }
-    catch (err) { toast(`No se pudo crear el gimnasio (${(err as { code?: string }).code || "error"}).`); setBusy(false); }
-  };
-  return (
-    <div className="wrap">
-      <TopBar title="Nuevo gimnasio" back="/" />
-      <form className="card" onSubmit={submit}>
-        <div className="field"><label htmlFor="gym-name">Nombre del gimnasio</label>
-          <input id="gym-name" autoFocus placeholder="Ej: Roma Gym" value={name} onChange={e => setName(e.target.value)} /></div>
-        <p className="obs">Vas a quedar como dueño. Después podés invitar a tus profes y socios.</p>
-        <button className="btn primary" disabled={busy || !name.trim()}>{busy ? "Creando…" : "Crear gimnasio"}</button>
-      </form>
+      <div className="links"><button className="btn ghost" onClick={signOut}>Salir</button></div>
     </div>
   );
 }
@@ -120,7 +103,9 @@ export function Join() {
           <p className="eyebrow">Invitación</p>
           <h2>{inv.gymName}</h2>
           <p>Te invitaron a sumarte como <b>{ROLE_LABEL[inv.role].toLowerCase()}</b>{inv.label ? ` (${inv.label})` : ""}.
-            {inv.role === "member" ? " Vas a poder ver tu plan, anotar tus pesos y ver tu progreso." : " Vas a poder armar planes y seguir a los socios."}</p>
+            {inv.role === "member" ? " Vas a poder ver tu plan, anotar tus pesos y ver tu progreso."
+              : inv.role === "staff" ? " Vas a poder armar planes, invitar socios y seguir su progreso."
+              : " Vas a administrar el gimnasio: armar planes, invitar socios y agregar a tus empleados."}</p>
           <p className="obs">Entrás como {user.displayName || user.email}.</p>
           <button className="btn primary big-btn" disabled={busy} onClick={join}>{busy ? "Uniéndote…" : "Unirme"}</button>
         </section>

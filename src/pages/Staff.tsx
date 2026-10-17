@@ -13,6 +13,7 @@ import { dayLabel, fmtDate, today } from "../lib/format";
 import { BottomTabs, ConfirmButton, Empty, Loader, TopBar, usePersistentState, useToast } from "../components/ui";
 import { PlanEditor, blankPlan, buildLibrary } from "../components/PlanEditor";
 import { BodyCard, LiftsCard } from "../components/Training";
+import { ShareLink } from "../components/ShareLink";
 import { useMemberNotes, useMemberPlan } from "./Gym";
 
 type StaffTab = "members" | "plans" | "invite" | "team";
@@ -31,7 +32,7 @@ export function StaffHome({ gym, role }: { gym: Gym; role: Role }) {
       <TopBar title={gym.name} sub={`${ROLE_LABEL[role]} · ${user?.displayName || user?.email}`} />
       {tab === "members" && <MembersTab gym={gym} members={members.data} loading={members.loading} tplName={tplName} />}
       {tab === "plans" && <PlansTab gym={gym} templates={templates.data} loading={templates.loading} members={members.data} />}
-      {tab === "invite" && <InviteTab gym={gym} role={role} templates={templates.data} />}
+      {tab === "invite" && <InviteTab gym={gym} templates={templates.data} />}
       {tab === "team" && <TeamTab gym={gym} role={role} />}
       <section className="card subtle">
         <div className="links">
@@ -102,109 +103,83 @@ function PlansTab({ gym, templates, loading, members }: {
   );
 }
 
-function ShareLink({ url, gymName, role }: { url: string; gymName: string; role: "staff" | "member" }) {
+const inviteStatus = (i: Omit<Invite, "id">) =>
+  !i.active ? "Desactivada" : i.expiresAt.toMillis() < Date.now() ? "Vencida" : i.single && i.usedBy ? "Usada" : "Activa";
+
+// Links already created for one role, with share and deactivate.
+function InviteList({ gym, role, onShare }: { gym: Gym; role: Role; onShare: (url: string) => void }) {
   const toast = useToast();
-  const msg = role === "member"
-    ? `Hola! Te comparto tu plan de entrenamiento de ${gymName}. Entrá con este link: ${url}`
-    : `Hola! Te invito a sumarte como profe de ${gymName} en GymPlan: ${url}`;
-  const copy = async () => {
-    try { await navigator.clipboard.writeText(url); toast("Link copiado"); }
-    catch { toast("No se pudo copiar. Mantené apretado el link para copiarlo."); }
-  };
-  const share = async () => { try { await navigator.share({ title: gymName, text: msg }); } catch { /* cancelled */ } };
+  const invites = useCollection<Omit<Invite, "id">>("invites", [where("gymId", "==", gym.id)], gym.id);
+  const list = invites.data.filter(i => i.role === role).sort((a, b) => b.createdAt - a.createdAt);
+  if (!list.length) return <p className="obs">Todavía no creaste links.</p>;
   return (
-    <div className="share">
-      <code className="link-box">{url}</code>
-      <div className="links">
-        <a className="btn primary" href={`https://wa.me/?text=${encodeURIComponent(msg)}`} target="_blank" rel="noopener noreferrer">Enviar por WhatsApp</a>
-        <button className="btn" onClick={copy}>Copiar link</button>
-        {"share" in navigator && <button className="btn ghost" onClick={share}>Compartir…</button>}
-      </div>
+    <div className="rows">
+      {list.map(i => {
+        const st = inviteStatus(i);
+        return (
+          <div key={i.id} className="row">
+            <span className="row-main"><b>{i.label || (i.single ? "Sin nombre" : "Link general")}</b>
+              <small>{i.single ? "un uso" : "general"} · creado el {dateOf(i.createdAt)}</small></span>
+            <span className={`pill ${st === "Activa" ? "ok" : ""}`}>{st}</span>
+            {st === "Activa" && <>
+              <button className="mini" onClick={() => onShare(inviteUrl(i.id))}>Compartir</button>
+              <ConfirmButton className="mini" confirmText="¿Desactivar?" onConfirm={() => setInviteActive(i.id, false).catch(() => toast("No se pudo desactivar."))}>Desactivar</ConfirmButton>
+            </>}
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-function InviteTab({ gym, role, templates }: { gym: Gym; role: Role; templates: (Omit<Template, "id"> & { id: string })[] }) {
+function InviteTab({ gym, templates }: { gym: Gym; templates: (Omit<Template, "id"> & { id: string })[] }) {
   const { user } = useAuth();
   const toast = useToast();
-  const [kind, setKind] = useState<"member" | "staff">("member");
   const [single, setSingle] = useState(true);
   const [label, setLabel] = useState("");
   const [tplId, setTplId] = useState("");
   const [days, setDays] = useState(30);
   const [busy, setBusy] = useState(false);
-  const [created, setCreated] = useState<{ url: string; role: "staff" | "member" } | null>(null);
-  const invites = useCollection<Omit<Invite, "id">>("invites", [where("gymId", "==", gym.id)], gym.id);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!user) return;
     setBusy(true);
     try {
-      const token = await createInvite({ gymId: gym.id, gymName: gym.name, user, role: kind, templateId: tplId || null, single: kind === "staff" || single, label, days });
-      setCreated({ url: inviteUrl(token), role: kind });
+      const token = await createInvite({ gymId: gym.id, gymName: gym.name, user, role: "member", templateId: tplId || null, single, label, days });
+      setShareUrl(inviteUrl(token));
       setLabel("");
     } catch (err) { toast(`No se pudo crear la invitación (${(err as { code?: string }).code || "error"}).`); }
     setBusy(false);
   };
 
-  const status = (i: Omit<Invite, "id">) =>
-    !i.active ? "Desactivada" : i.expiresAt.toMillis() < Date.now() ? "Vencida" : i.single && i.usedBy ? "Usada" : "Activa";
-  const list = invites.data.slice().sort((a, b) => b.createdAt - a.createdAt);
-
   return (
     <>
       <form className="card" onSubmit={submit}>
-        <h2>Invitar</h2>
-        {role === "owner" && (
-          <div className="seg" role="radiogroup" aria-label="Tipo de invitación">
-            <button type="button" role="radio" aria-checked={kind === "member"} onClick={() => setKind("member")}>Socio</button>
-            <button type="button" role="radio" aria-checked={kind === "staff"} onClick={() => setKind("staff")}>Profe</button>
-          </div>
-        )}
-        <div className="field"><label htmlFor="inv-label">{kind === "member" ? "Para quién (opcional)" : "Nombre del profe (opcional)"}</label>
+        <h2>Invitar socios</h2>
+        <div className="field"><label htmlFor="inv-label">Para quién (opcional)</label>
           <input id="inv-label" placeholder="Ej: Martina López" value={label} onChange={e => setLabel(e.target.value)} /></div>
-        {kind === "member" && <>
-          <div className="field"><label htmlFor="inv-plan">Plan</label>
-            <select id="inv-plan" value={tplId} onChange={e => setTplId(e.target.value)}>
-              <option value="">Sin plan (lo asigno después)</option>
-              {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select></div>
-          <div className="seg" role="radiogroup" aria-label="Uso del link">
-            <button type="button" role="radio" aria-checked={single} onClick={() => setSingle(true)}>Para una persona</button>
-            <button type="button" role="radio" aria-checked={!single} onClick={() => setSingle(false)}>Link general</button>
-          </div>
-          <p className="obs">{single ? "El link sirve una sola vez." : "Cualquiera con el link se puede sumar como socio. Útil para compartir en el grupo del gimnasio."}</p>
-        </>}
-        {kind === "staff" && <p className="obs">El profe va a poder armar planes, invitar socios y ver su progreso. El link sirve una sola vez.</p>}
+        <div className="field"><label htmlFor="inv-plan">Plan</label>
+          <select id="inv-plan" value={tplId} onChange={e => setTplId(e.target.value)}>
+            <option value="">Sin plan (lo asigno después)</option>
+            {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select></div>
+        <div className="seg" role="radiogroup" aria-label="Uso del link">
+          <button type="button" role="radio" aria-checked={single} onClick={() => setSingle(true)}>Para una persona</button>
+          <button type="button" role="radio" aria-checked={!single} onClick={() => setSingle(false)}>Link general</button>
+        </div>
+        <p className="obs">{single ? "El link sirve una sola vez." : "Cualquiera con el link se puede sumar como socio. Útil para compartir en el grupo del gimnasio."}</p>
         <div className="field"><label htmlFor="inv-days">Vence en</label>
           <select id="inv-days" value={days} onChange={e => setDays(+e.target.value)}>
             <option value={7}>7 días</option><option value={30}>30 días</option><option value={90}>90 días</option><option value={365}>1 año</option>
           </select></div>
         <button className="btn primary" disabled={busy}>{busy ? "Creando…" : "Crear link"}</button>
-        {created && <ShareLink url={created.url} gymName={gym.name} role={created.role} />}
+        {shareUrl && <ShareLink url={shareUrl} gymName={gym.name} role="member" />}
       </form>
-
       <section className="card">
-        <h2>Links creados</h2>
-        {!list.length ? <p className="obs">Todavía no creaste invitaciones.</p> : (
-          <div className="rows">
-            {list.map(i => {
-              const st = status(i);
-              return (
-                <div key={i.id} className="row">
-                  <span className="row-main"><b>{i.label || (i.single ? "Sin nombre" : "Link general")}</b>
-                    <small>{ROLE_LABEL[i.role]} · {i.single ? "un uso" : "general"} · creado el {dateOf(i.createdAt)}</small></span>
-                  <span className={`pill ${st === "Activa" ? "ok" : ""}`}>{st}</span>
-                  {st === "Activa" && <>
-                    <button className="mini" onClick={() => setCreated({ url: inviteUrl(i.id), role: i.role })}>Compartir</button>
-                    <ConfirmButton className="mini" confirmText="¿Desactivar?" onConfirm={() => setInviteActive(i.id, false).catch(() => toast("No se pudo desactivar."))}>Desactivar</ConfirmButton>
-                  </>}
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <h2>Links para socios</h2>
+        <InviteList gym={gym} role="member" onShare={url => { setShareUrl(url); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
       </section>
     </>
   );
@@ -214,23 +189,56 @@ function TeamTab({ gym, role }: { gym: Gym; role: Role }) {
   const { user } = useAuth();
   const toast = useToast();
   const team = useCollection<Omit<Member, "uid">>(`gyms/${gym.id}/members`, [where("role", "in", ["owner", "staff"])], "team");
+  const [label, setLabel] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+
+  const addEmployee = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    setBusy(true);
+    try {
+      const token = await createInvite({ gymId: gym.id, gymName: gym.name, user, role: "staff", templateId: null, single: true, label, days: 7 });
+      setShareUrl(inviteUrl(token));
+      setLabel("");
+    } catch (err) { toast(`No se pudo crear el link (${(err as { code?: string }).code || "error"}).`); }
+    setBusy(false);
+  };
+
   if (team.loading) return <Loader />;
   return (
-    <section className="card">
-      <h2>Equipo</h2>
-      <div className="rows">
-        {team.data.sort((a, b) => (a.role === "owner" ? -1 : b.role === "owner" ? 1 : a.name.localeCompare(b.name))).map(m => (
-          <div key={m.id} className="row">
-            {m.photoURL ? <img className="avatar" src={m.photoURL} alt="" referrerPolicy="no-referrer" /> : <span className="avatar">{(m.name || "?")[0]}</span>}
-            <span className="row-main"><b>{m.name || m.email}{m.id === user?.uid ? " (vos)" : ""}</b><small>{ROLE_LABEL[m.role]} · {m.email}</small></span>
-            {role === "owner" && m.role === "staff" && (
-              <ConfirmButton className="mini" confirmText="¿Quitar?" onConfirm={() => removeMember(gym.id, m.id).then(() => toast("Profe quitado")).catch(() => toast("No se pudo quitar."))}>Quitar</ConfirmButton>
-            )}
-          </div>
-        ))}
-      </div>
-      {role === "owner" && <p className="obs">Para sumar un profe, creá una invitación de tipo <b>Profe</b> en la pestaña Invitar.</p>}
-    </section>
+    <>
+      <section className="card">
+        <h2>Equipo</h2>
+        <div className="rows">
+          {team.data.sort((a, b) => (a.role === "owner" ? -1 : b.role === "owner" ? 1 : a.name.localeCompare(b.name))).map(m => (
+            <div key={m.id} className="row">
+              {m.photoURL ? <img className="avatar" src={m.photoURL} alt="" referrerPolicy="no-referrer" /> : <span className="avatar">{(m.name || "?")[0]}</span>}
+              <span className="row-main"><b>{m.name || m.email}{m.id === user?.uid ? " (vos)" : ""}</b><small>{ROLE_LABEL[m.role]} · {m.email}</small></span>
+              {role === "owner" && m.role === "staff" && (
+                <ConfirmButton className="mini" confirmText="¿Quitar?" onConfirm={() => removeMember(gym.id, m.id).then(() => toast("Empleado quitado")).catch(() => toast("No se pudo quitar."))}>Quitar</ConfirmButton>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+      {role === "owner" ? (
+        <>
+          <form className="card" onSubmit={addEmployee}>
+            <h2>Agregar empleado</h2>
+            <p className="obs">Los empleados arman planes, invitan socios y ven su progreso. Creá un link y mandáselo; sirve una sola vez y vence en 7 días.</p>
+            <div className="field"><label htmlFor="emp-label">Nombre del empleado (opcional)</label>
+              <input id="emp-label" placeholder="Ej: Ignacio, profe de la mañana" value={label} onChange={e => setLabel(e.target.value)} /></div>
+            <button className="btn primary" disabled={busy}>{busy ? "Creando…" : "Crear link para empleado"}</button>
+            {shareUrl && <ShareLink url={shareUrl} gymName={gym.name} role="staff" />}
+          </form>
+          <section className="card">
+            <h2>Links para empleados</h2>
+            <InviteList gym={gym} role="staff" onShare={setShareUrl} />
+          </section>
+        </>
+      ) : <p className="obs">Solo el dueño puede agregar o quitar empleados.</p>}
+    </>
   );
 }
 
@@ -317,7 +325,7 @@ export function MemberDetail({ gym, role }: { gym: Gym; role: Role }) {
         <h2>Dar de baja</h2>
         <p className="obs">Deja de ver su plan. Si vuelve, mandale una invitación nueva.</p>
         <div className="links">
-          {role === "owner" && <ConfirmButton className="btn ghost" confirmText="¿Hacerlo profe?" onConfirm={() => changeRole(gym.id, uid, "staff").then(() => toast("Ahora es profe")).catch(() => toast("No se pudo cambiar."))}>Hacerlo profe</ConfirmButton>}
+          {role === "owner" && <ConfirmButton className="btn ghost" confirmText="¿Hacerlo empleado?" onConfirm={() => changeRole(gym.id, uid, "staff").then(() => toast("Ahora es empleado")).catch(() => toast("No se pudo cambiar."))}>Hacerlo empleado</ConfirmButton>}
           <ConfirmButton confirmText="Tocá de nuevo para dar de baja" onConfirm={() => removeMember(gym.id, uid).then(() => { toast("Socio dado de baja"); nav(back); }).catch(() => toast("No se pudo dar de baja."))}>Dar de baja</ConfirmButton>
         </div>
       </section>

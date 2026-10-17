@@ -1,8 +1,9 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/auth";
 import { Loader, ToastProvider } from "./components/ui";
-import { Home, Join, Login, NewGym } from "./pages/Start";
+import { Home, Join, Login } from "./pages/Start";
 import { GymRoutes } from "./pages/Gym";
+import { AdminPage } from "./pages/Admin";
 
 function Gate({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth();
@@ -19,7 +20,7 @@ export default function App() {
             <Routes>
               <Route path="/join/:token" element={<Join />} />
               <Route path="/" element={<Gate><Home /></Gate>} />
-              <Route path="/nuevo" element={<Gate><NewGym /></Gate>} />
+              <Route path="/admin" element={<Gate><AdminPage /></Gate>} />
               <Route path="/g/:gymId/*" element={<Gate><GymRoutes /></Gate>} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

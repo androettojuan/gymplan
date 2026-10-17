@@ -15,32 +15,38 @@ const cleanPlan = (p: Plan): Plan => ({
   baseTemplateId: p.baseTemplateId ?? null,
 });
 
-// ---------- gyms ----------
-export async function createGym(user: User, name: string) {
-  const gymRef = doc(collection(db, "gyms"));
-  const b = writeBatch(db);
-  b.set(gymRef, { name: name.trim(), ownerUid: user.uid, createdAt: now() });
-  b.set(doc(db, "gyms", gymRef.id, "members", user.uid), { role: "owner", ...profile(user), joinedAt: now(), inviteId: null, templateId: null });
-  b.set(doc(db, "users", user.uid, "gyms", gymRef.id), { role: "owner", gymName: name.trim(), joinedAt: now() });
-  await b.commit();
-  return gymRef.id;
+// ---------- invites ----------
+type InviteOpts = {
+  gymId: string; gymName: string; user: User; role: Role;
+  templateId: string | null; single: boolean; label: string; days: number;
+};
+const inviteData = (o: InviteOpts): Omit<Invite, "id"> => ({
+  gymId: o.gymId, gymName: o.gymName, role: o.role,
+  templateId: o.role === "member" ? o.templateId : null,
+  // Only member links can be shared with many people; staff and owner links work once.
+  single: o.role === "member" ? o.single : true,
+  label: o.label.trim(), usedBy: null, createdBy: o.user.uid, createdAt: now(),
+  expiresAt: Timestamp.fromMillis(now() + o.days * 864e5), active: true,
+});
+
+export async function createInvite(opts: InviteOpts) {
+  const token = randomToken();
+  await setDoc(doc(db, "invites", token), inviteData(opts));
+  return token;
 }
 
-// ---------- invites ----------
-export async function createInvite(opts: {
-  gymId: string; gymName: string; user: User; role: "staff" | "member";
-  templateId: string | null; single: boolean; label: string; days: number;
-}) {
+// ---------- gyms (super admin) ----------
+// Creates the gym and a one-time link for its owner, who joins like everyone else.
+export async function createGymWithOwnerInvite(user: User, name: string, ownerLabel: string) {
+  const gymRef = doc(collection(db, "gyms"));
   const token = randomToken();
-  const data: Omit<Invite, "id"> = {
-    gymId: opts.gymId, gymName: opts.gymName, role: opts.role,
-    templateId: opts.role === "member" ? opts.templateId : null,
-    single: opts.role === "staff" ? true : opts.single,
-    label: opts.label.trim(), usedBy: null, createdBy: opts.user.uid, createdAt: now(),
-    expiresAt: Timestamp.fromMillis(now() + opts.days * 864e5), active: true,
-  };
-  await setDoc(doc(db, "invites", token), data);
-  return token;
+  const b = writeBatch(db);
+  b.set(gymRef, { name: name.trim(), createdAt: now(), createdBy: user.uid });
+  b.set(doc(db, "invites", token), inviteData({
+    gymId: gymRef.id, gymName: name.trim(), user, role: "owner", templateId: null, single: true, label: ownerLabel, days: 30,
+  }));
+  await b.commit();
+  return { gymId: gymRef.id, token };
 }
 
 export const inviteUrl = (token: string) => `${location.origin}/join/${token}`;

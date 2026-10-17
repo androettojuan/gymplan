@@ -33,8 +33,8 @@ export interface Template extends Plan {
 export interface Gym {
   id: string;
   name: string;
-  ownerUid: string;
   createdAt: number;
+  createdBy: string;
 }
 
 export interface Member {
@@ -52,7 +52,7 @@ export interface Invite {
   id: string;
   gymId: string;
   gymName: string;
-  role: "staff" | "member";
+  role: Role;
   templateId: string | null;
   single: boolean;
   label: string;
@@ -87,4 +87,4 @@ export interface UserGym {
   joinedAt: number;
 }
 
-export const ROLE_LABEL: Record<Role, string> = { owner: "Dueño", staff: "Profe", member: "Socio" };
+export const ROLE_LABEL: Record<Role, string> = { owner: "Dueño", staff: "Empleado", member: "Socio" };
