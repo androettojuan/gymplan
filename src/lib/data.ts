@@ -18,15 +18,19 @@ const cleanPlan = (p: Plan): Plan => ({
 // ---------- invites ----------
 type InviteOpts = {
   gymId: string; gymName: string; user: User; role: Role;
-  templateId: string | null; single: boolean; label: string; days: number;
+  // null: the link never expires (it still works only once and can be deleted).
+  templateId: string | null; single: boolean; label: string; days: number | null;
 };
+// The rules compare against a timestamp, so "never" is a date far ahead.
+const NEVER = Date.UTC(2100, 0, 1);
+export const neverExpires = (i: Pick<Invite, "expiresAt">) => i.expiresAt.toMillis() >= NEVER;
 const inviteData = (o: InviteOpts): Omit<Invite, "id"> => ({
   gymId: o.gymId, gymName: o.gymName, role: o.role,
   templateId: o.role === "member" ? o.templateId : null,
   // Only member links can be shared with many people; staff and owner links work once.
   single: o.role === "member" ? o.single : true,
   label: o.label.trim(), usedBy: null, createdBy: o.user.uid, createdAt: now(),
-  expiresAt: Timestamp.fromMillis(now() + o.days * 864e5), active: true,
+  expiresAt: Timestamp.fromMillis(o.days == null ? NEVER : now() + o.days * 864e5), active: true,
 });
 
 export async function createInvite(opts: InviteOpts) {
@@ -74,7 +78,7 @@ export async function acceptInvite(inv: Invite, user: User) {
   await b.commit();
 }
 
-export const setInviteActive = (id: string, active: boolean) => updateDoc(doc(db, "invites", id), { active });
+export const deleteInvite = (id: string) => deleteDoc(doc(db, "invites", id));
 
 // ---------- plans ----------
 export async function saveTemplate(gymId: string, tplId: string | null, plan: Plan, uid: string) {

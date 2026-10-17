@@ -5,7 +5,7 @@ import { useAuth } from "../lib/auth";
 import { useCollection, useDoc } from "../lib/hooks";
 import {
   assignTemplate, changeRole, createInvite, deletePersonalPlan, deleteTemplate, inviteUrl,
-  removeMember, savePersonalPlan, saveTemplate, setInviteActive,
+  removeMember, savePersonalPlan, saveTemplate, deleteInvite, neverExpires,
 } from "../lib/data";
 import type { Gym, Invite, Member, Plan, Role, Template } from "../types";
 import { ROLE_LABEL } from "../types";
@@ -101,12 +101,12 @@ function PlansTab({ gym, templates, loading, members }: {
 const inviteStatus = (i: Omit<Invite, "id">) =>
   !i.active ? "Desactivada" : i.expiresAt.toMillis() < Date.now() ? "Vencida" : i.single && i.usedBy ? "Usada" : "Activa";
 
-// Links already created for one role, with share and deactivate.
+// Links already created for one role: share the ones still usable, delete any of them.
 function InviteList({ gym, role, onShare }: { gym: Gym; role: Role; onShare: (url: string) => void }) {
   const toast = useToast();
   const invites = useCollection<Omit<Invite, "id">>("invites", [where("gymId", "==", gym.id)], gym.id);
   const list = invites.data.filter(i => i.role === role).sort((a, b) => b.createdAt - a.createdAt);
-  if (!list.length) return <p className="obs">Todavía no creaste links.</p>;
+  if (!list.length) return <p className="obs">No hay links creados.</p>;
   return (
     <div className="rows">
       {list.map(i => {
@@ -114,12 +114,12 @@ function InviteList({ gym, role, onShare }: { gym: Gym; role: Role; onShare: (ur
         return (
           <div key={i.id} className="row">
             <span className="row-main"><b>{i.label || (i.single ? "Sin nombre" : "Link general")}</b>
-              <small>{i.single ? "un uso" : "general"} · creado el {dateOf(i.createdAt)}</small></span>
+              <small>{i.single ? "un uso" : "general"} · creado el {dateOf(i.createdAt)} · {neverExpires(i) ? "sin vencimiento" : `vence el ${dateOf(i.expiresAt.toMillis())}`}</small></span>
             <span className={`pill ${st === "Activa" ? "ok" : ""}`}>{st}</span>
-            {st === "Activa" && <>
-              <button className="mini" onClick={() => onShare(inviteUrl(i.id))}>Compartir</button>
-              <ConfirmButton className="mini" confirmText="¿Desactivar?" onConfirm={() => setInviteActive(i.id, false).catch(() => toast("No se pudo desactivar."))}>Desactivar</ConfirmButton>
-            </>}
+            <span className="row-actions">
+              {st === "Activa" && <button className="mini" onClick={() => onShare(inviteUrl(i.id))}>Compartir</button>}
+              <ConfirmButton className="mini" confirmText="¿Eliminar?" onConfirm={() => deleteInvite(i.id).then(() => toast("Link eliminado")).catch(() => toast("No se pudo eliminar."))}>Eliminar</ConfirmButton>
+            </span>
           </div>
         );
       })}
@@ -193,7 +193,7 @@ function TeamTab({ gym, role }: { gym: Gym; role: Role }) {
     if (!user) return;
     setBusy(true);
     try {
-      const token = await createInvite({ gymId: gym.id, gymName: gym.name, user, role: "staff", templateId: null, single: true, label, days: 7 });
+      const token = await createInvite({ gymId: gym.id, gymName: gym.name, user, role: "staff", templateId: null, single: true, label, days: null });
       setShareUrl(inviteUrl(token));
       setLabel("");
     } catch (err) { toast(`No se pudo crear el link (${(err as { code?: string }).code || "error"}).`); }
@@ -221,7 +221,7 @@ function TeamTab({ gym, role }: { gym: Gym; role: Role }) {
         <>
           <form className="card" onSubmit={addEmployee}>
             <h2>Agregar empleado</h2>
-            <p className="obs">Los empleados arman planes, invitan socios y ven su progreso. Creá un link y mandáselo; sirve una sola vez y vence en 7 días.</p>
+            <p className="obs">Los empleados arman planes, invitan socios y ven su progreso. Creá un link y mandáselo: sirve una sola vez y no vence. Si no lo va a usar, eliminalo desde la lista de abajo.</p>
             <div className="field"><label htmlFor="emp-label">Nombre del empleado (opcional)</label>
               <input id="emp-label" placeholder="Ej: Ignacio, profe de la mañana" value={label} onChange={e => setLabel(e.target.value)} /></div>
             <button className="btn primary" disabled={busy}>{busy ? "Creando…" : "Crear link para empleado"}</button>

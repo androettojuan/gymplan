@@ -194,6 +194,19 @@ describe("roles", () => {
   it("el dueño no se puede dar de baja a sí mismo", async () => {
     await assertFails(db("owner").doc(`gyms/${GYM}/members/owner`).delete());
   });
+  it("el dueño elimina links de empleado; un empleado no", async () => {
+    await assertFails(db("coach").doc("invites/staff1").delete());
+    await assertSucceeds(db("owner").doc("invites/staff1").delete());
+  });
+  it("un empleado elimina links de socio; un socio no", async () => {
+    await assertFails(db("ana").doc("invites/single1").delete());
+    await assertSucceeds(db("coach").doc("invites/single1").delete());
+  });
+  it("un link de empleado sin vencimiento sigue sirviendo", async () => {
+    await env.withSecurityRulesDisabled(ctx => ctx.firestore().doc("invites/staffNever").set(
+      invite({ role: "staff", templateId: null, expiresAt: firebase.firestore.Timestamp.fromMillis(Date.UTC(2100, 0, 1)) })));
+    await assertSucceeds(join("profe2", "staffNever", "staff", null, true));
+  });
   it("el dueño quita empleados", async () => {
     await assertSucceeds(db("owner").doc(`gyms/${GYM}/members/coach`).delete());
   });

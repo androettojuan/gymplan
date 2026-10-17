@@ -101,7 +101,11 @@ service cloud.firestore {
             && onlyChanges(['usedBy'])
             && request.resource.data.usedBy == me()
             && getAfter(memberPath(resource.data.gymId, me())).data.inviteId == token);
-      allow delete: if signedIn() && (isStaff(resource.data.gymId) || isSuper());
+      // Whoever may create a kind of link may also delete it.
+      allow delete: if signedIn()
+        && ((resource.data.role == 'member' && isStaff(resource.data.gymId))
+            || (resource.data.role == 'staff' && isOwner(resource.data.gymId))
+            || isSuper());
     }
 
     match /users/{uid}/gyms/{gymId} {
