@@ -31,7 +31,7 @@ function join(uid: string, token: string, role: string, templateId: string | nul
 beforeAll(async () => {
   env = await initializeTestEnvironment({
     projectId: "gymplan-rules-test",
-    firestore: { rules: readFileSync("firestore.rules", "utf8"), host: "127.0.0.1", port: 8080 },
+    firestore: { rules: readFileSync("firestore.rules", "utf8"), host: "127.0.0.1", port: 8180 },
   });
 });
 afterAll(() => env.cleanup());

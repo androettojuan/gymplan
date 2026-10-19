@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider } from "firebase/auth";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
+import { connectAuthEmulator, getAuth, GoogleAuthProvider, signInWithCredential } from "firebase/auth";
+import { connectFirestoreEmulator, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
 
 // Public web config: access control lives in firestore.rules.
 const config = {
@@ -20,3 +20,14 @@ export const db = initializeFirestore(app, {
 });
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: "select_account" });
+
+// Local emulators, only in development (npm run capturas). Never in a production build.
+if (import.meta.env.DEV && import.meta.env.VITE_USE_EMULATOR === "true") {
+  connectAuthEmulator(auth, "http://127.0.0.1:9299", { disableWarnings: true });
+  connectFirestoreEmulator(db, "127.0.0.1", 8180);
+  // The Auth emulator takes an unsigned Google token, so a script can sign in as anyone.
+  Object.assign(window, {
+    gpSignIn: (sub: string, email: string, name: string) =>
+      signInWithCredential(auth, GoogleAuthProvider.credential(JSON.stringify({ sub, email, name, email_verified: true }))),
+  });
+}
