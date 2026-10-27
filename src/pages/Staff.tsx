@@ -303,7 +303,7 @@ export function MemberDetail({ gym, role }: { gym: Gym; role: Role }) {
             {templates.data.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select></div>
         {personal
-          ? <p className="obs"><span className="pill ok">Personalizado</span> Tiene un plan propio basado en la plantilla; los cambios en la plantilla no le llegan.</p>
+          ? <p className="obs"><span className="pill ok">Personalizado</span> {plan?.updatedBy === uid ? "Este plan lo armó el socio desde la app." : "Tiene un plan propio basado en la plantilla."} Los cambios en la plantilla no le llegan.</p>
           : <p className="obs">Ve la plantilla tal cual. Si necesita ajustes solo para él o ella, personalizalo.</p>}
         <div className="links">
           <Link className="btn" to={`/g/${gym.id}/socio/${uid}/plan`}>{personal ? "Editar plan personalizado" : "Personalizar plan"}</Link>

@@ -1,8 +1,11 @@
 import type { Plan, PlanDay } from "../types";
 import { safeUrl, slug } from "./format";
 
-// Reads the gym's usual spreadsheet-style PDF: "Entrenamiento N" blocks with the columns
-// Ejercicio / Video / Series / Reps / Descanso / Observaciones, video links as PDF annotations.
+// Reads two kinds of plan PDF:
+// - list: "Entrenamiento N" blocks with the columns Ejercicio / Video / Series / Reps / Descanso /
+//   Observaciones, video links as PDF annotations.
+// - grid: one column per weekday (LUNES, MARTES…), one exercise per cell written as "Name 3x10",
+//   and "COMBINADOS" cells that start a group of exercises done together.
 
 interface Item { x0: number; x1: number; y: number; h: number; str: string }
 interface Link { x0: number; x1: number; y0: number; y1: number; url: string }
@@ -25,10 +28,16 @@ export interface ParsedPdf extends Plan {
   coach: string;
 }
 
+type PdfDoc = Awaited<ReturnType<Awaited<ReturnType<typeof loadPdfjs>>["getDocument"]>["promise"]>;
+
 export async function parsePlanPdf(buf: ArrayBuffer): Promise<ParsedPdf> {
   const pdfjs = await loadPdfjs();
-  const pdf = await pdfjs.getDocument({ data: buf, isEvalSupported: false }).promise;
+  return parsePlanDoc(await pdfjs.getDocument({ data: buf, isEvalSupported: false }).promise);
+}
+
+export async function parsePlanDoc(pdf: PdfDoc): Promise<ParsedPdf> {
   const rows: Row[] = [];
+  const pages: Item[][] = [];
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
     const tc = await page.getTextContent();
@@ -42,6 +51,7 @@ export async function parsePlanPdf(buf: ArrayBuffer): Promise<ParsedPdf> {
       .filter(i => i.str && i.str.trim())
       .map(i => ({ x0: i.transform[4], x1: i.transform[4] + i.width, y: i.transform[5], h: Math.abs(i.transform[3]) || 8, str: i.str!.replace(/\s+/g, " ").trim() }))
       .sort((a, b) => b.y - a.y || a.x0 - b.x0);
+    pages.push(items);
     const pageRows: Row[] = [];
     for (const it of items) {
       let r = pageRows.find(r => Math.abs(r.y - it.y) < 4);
@@ -58,6 +68,13 @@ export async function parsePlanPdf(buf: ArrayBuffer): Promise<ParsedPdf> {
     }
   }
 
+  const plan = rows.some(r => r.items.filter(x => WEEKDAY.test(x.str)).length > 1) ? parseGrid(rows, pages) : parseList(rows);
+  plan.days = plan.days.filter(d => d.exercises.length);
+  if (!plan.days.length) throw new Error("No encontré ejercicios en ese PDF. ¿Es la planilla del gimnasio?");
+  return plan;
+}
+
+function parseList(rows: Row[]): ParsedPdf {
   const plan: ParsedPdf = { name: "", gym: "", coach: "", notes: [], days: [] };
   let day: PlanDay | null = null;
   let cols: { key: string; c: number }[] | null = null;
@@ -109,8 +126,73 @@ export async function parsePlanPdf(buf: ArrayBuffer): Promise<ParsedPdf> {
       rest: ex.rest.join(" "), obs: ex.obs.join(" "), video: safeUrl(video),
     });
   }
-  plan.days = plan.days.filter(d => d.exercises.length);
-  if (!plan.days.length) throw new Error("No encontré ejercicios en ese PDF. ¿Es la planilla del gimnasio?");
   plan.name = plan.coach ? `Plan de ${plan.coach}` : "Plan importado";
   return plan;
+}
+
+const WEEKDAY = /^(lunes|martes|mi[ée]rcoles|jueves|viernes|s[áa]bado|domingo)\b/i;
+const COMBO = /^combinad[oa]s?$/i;
+
+function parseGrid(rows: Row[], pages: Item[][]): ParsedPdf {
+  const plan: ParsedPdf = { name: "", gym: "", coach: "", notes: [], days: [] };
+  let student = "";
+  let m: RegExpMatchArray | null;
+  const headPage = pages.findIndex(items => items.filter(x => WEEKDAY.test(x.str)).length > 1);
+  const heads = pages[headPage].filter(x => WEEKDAY.test(x.str));
+  const top = Math.max(...heads.map(h => h.y));
+
+  // "Profe: …", "Gym: …", "Alumna: …", "Objetivo: …", "Observaciones: …" above the table.
+  for (const r of rows) {
+    if (!(m = r.text.match(/^(Profe(?:sor|sora)?|Gym|Gimnasio|Alumn[oa]|Socio|Socia|Objetivo|Observaciones)\s*:\s*(.*)$/i))) continue;
+    const [key, val] = [m[1].toLowerCase(), m[2].trim()];
+    if (!val) continue;
+    if (key.startsWith("profe")) plan.coach ||= val;
+    else if (key.startsWith("gym") || key.startsWith("gimnasio")) plan.gym ||= val;
+    else if (key.startsWith("alumn") || key.startsWith("soci")) student ||= val;
+    else if (key === "objetivo") plan.notes.push(`Objetivo: ${val}`);
+    else plan.notes.push(val);
+  }
+
+  // Columns start at the weekday headers; a header may wrap ("LUNES (tren" / "inferior)").
+  const cols = heads.sort((a, b) => a.x0 - b.x0).map(h => h.x0);
+  const colOf = (it: Item) => cols.reduce((best, c, i) => (Math.abs(c - it.x0) < Math.abs(cols[best] - it.x0) ? i : best), 0);
+  const cells: Item[][][] = cols.map(() => []);
+  pages.forEach((items, p) => {
+    if (p < headPage) return;
+    const last: (Item | null)[] = cols.map(() => null);
+    for (const it of items) {
+      if (p === headPage && it.y > top) continue;
+      if (it.x0 < cols[0] - 20) continue;
+      const c = colOf(it), prev = last[c];
+      if (!prev || prev.y - it.y > Math.max(prev.h, it.h) * 1.7) cells[c].push([]);
+      cells[c][cells[c].length - 1].push(it);
+      last[c] = it;
+    }
+  });
+
+  cells.forEach(col => {
+    const [head, ...body] = col.map(cell => cell.map(i => i.str).join(" ").replace(/\s+/g, " ").trim()).filter(Boolean);
+    let title = head.toLowerCase().replace(/^./, ch => ch.toUpperCase());
+    if (title.includes("(") && !title.includes(")")) title += ")";
+    const day: PlanDay = { title, exercises: [] };
+    let group = 0, inGroup = false;
+    for (const text of body) {
+      if (COMBO.test(text)) { group++; inGroup = true; continue; }
+      const ex = splitSetsReps(text);
+      day.exercises.push({ exKey: slug(ex.name), name: ex.name, sets: ex.sets, reps: ex.reps, rest: "", obs: inGroup ? `Combinado ${group}` : "", video: "" });
+    }
+    plan.days.push(day);
+  });
+
+  plan.name = student ? `Plan de ${student}` : plan.coach ? `Plan de ${plan.coach}` : "Plan importado";
+  return plan;
+}
+
+// "Press banca plano 3x8-10" → name, sets "3", reps "8-10". Also "3x30seg", "3x8 cada lado",
+// and "312" (a missing "x") at the end.
+export function splitSetsReps(text: string) {
+  let m = text.match(/^(.*?)\s*\b(\d+)\s*[x×]\s*(\d+(?:\s*[-–a]\s*\d+)?\s*(?:seg(?:undos)?|s|min|")?)(.*)$/i);
+  if (m) return { name: m[1].trim(), sets: m[2], reps: `${m[3].replace(/\s+/g, "")}${m[4].trim() ? ` ${m[4].trim()}` : ""}` };
+  if ((m = text.match(/^(.*\D)\s+([2-6])(\d{1,2})$/))) return { name: m[1].trim(), sets: m[2], reps: m[3] };
+  return { name: text, sets: "", reps: "" };
 }

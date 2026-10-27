@@ -192,6 +192,16 @@ describe("planes", () => {
     await assertSucceeds(db("ana").doc(`gyms/${GYM}/plans/ana`).get());
     await assertFails(db("beto").doc(`gyms/${GYM}/plans/ana`).get());
   });
+  it("el socio arma su propio plan, pero no el de otro", async () => {
+    const own = { ...plan, updatedBy: "ana" };
+    await assertSucceeds(db("ana").doc(`gyms/${GYM}/plans/ana`).set(own));
+    await assertSucceeds(db("ana").collection(`gyms/${GYM}/plans/ana/versions`).add(own));
+    await assertFails(db("ana").doc(`gyms/${GYM}/plans/ana`).set({ ...plan, updatedBy: "coach" }));
+    await assertFails(db("ana").doc(`gyms/${GYM}/plans/beto`).set(own));
+    await assertFails(db("ana").collection(`gyms/${GYM}/plans/ana/versions`).get());
+    await assertSucceeds(db("ana").doc(`gyms/${GYM}/plans/ana`).delete());
+    await assertFails(db("ana").doc(`gyms/${GYM}/plans/beto`).delete());
+  });
   it("el profe asigna planes; el socio no se puede cambiar el plan", async () => {
     await assertSucceeds(db("coach").doc(`gyms/${GYM}/members/ana`).update({ templateId: "tplB" }));
     await assertFails(db("ana").doc(`gyms/${GYM}/members/ana`).update({ templateId: "tplA" }));

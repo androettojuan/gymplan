@@ -29,8 +29,15 @@ de invitación define a qué gimnasio y con qué rol se suman.
 ### Entrenar
 El plan está dividido en días (**Día 1**, **Día 2**…) y cada día muestra cuándo se hizo por
 última vez. Cada ejercicio muestra las series y repeticiones, el último peso anotado y hace
-cuánto. Lo que ya se hizo hoy queda marcado con ✓ **Hecho hoy**. Las **Indicaciones del
-profe** (calentar, descansos, cuándo subir el peso) están arriba de todo.
+cuánto. Lo que ya se hizo hoy queda marcado con ✓ **Hecho hoy**. Las **Indicaciones**
+(calentar, descansos, cuándo subir el peso) están arriba de todo.
+
+### Armar su propio plan
+Si el profe todavía no le asignó un plan, el socio puede tocar **Armar mi plan** y cargarlo
+a mano: los días, y en cada uno el nombre del ejercicio, las series, las repeticiones, el
+descanso y alguna observación. También puede importar su PDF. Con **Editar mi plan**, debajo
+de los ejercicios, lo cambia cuando quiera. Si tenía un plan del gimnasio, lo que edita pasa a
+ser su plan personalizado y puede volver al del gimnasio cuando quiera.
 
 ### Anotar los pesos
 Al tocar un ejercicio se abre: el botón **▶ Ver video** con la técnica, el descanso y las
@@ -54,13 +61,18 @@ Un plan tiene un nombre, indicaciones generales y días con ejercicios (series, 
 descanso, link al video y observaciones). Los ejercicios que ya están en otros planes del
 gimnasio se autocompletan con su video.
 
-- **Importar desde PDF**: lee la planilla que usan hoy los gimnasios, con bloques
-  *Entrenamiento 1, 2…* y las columnas *Ejercicio / Video / Series / Reps / Descanso /
-  Observaciones*, links de video incluidos. Se revisa y se guarda.
+- **Importar desde PDF**: lee dos tipos de planilla. Se revisa y se guarda.
+  - En lista: bloques *Entrenamiento 1, 2…* con las columnas *Ejercicio / Video / Series /
+    Reps / Descanso / Observaciones*, links de video incluidos.
+  - En grilla: una columna por día (*LUNES (tren inferior)*, *MARTES*…) y un ejercicio por
+    celda, como *Press banca plano 3x8-10*. Las celdas **COMBINADOS** arman grupos de
+    ejercicios que se hacen juntos (quedan como *Combinado 1, 2…* en las observaciones). Toma
+    también el profe, el gimnasio, el nombre del alumno y las observaciones del encabezado.
 - Al guardar un plan, **los socios que lo usan ven el cambio enseguida**. Cada versión queda
   guardada como historial.
 - **Plan personalizado**: desde la ficha de un socio se ajusta el plan solo para esa persona.
-  Desde ahí es independiente; con **Usar la plantilla** vuelve al plan común.
+  Desde ahí es independiente; con **Usar la plantilla** vuelve al plan común. Si el plan lo
+  armó el mismo socio desde la app, la ficha lo indica.
 
 ### Socios
 La lista de socios con su plan, con los que todavía no tienen plan resaltados. La **ficha de
@@ -87,7 +99,7 @@ quitarlos. Los empleados hacen todo lo demás: planes, invitaciones y seguimient
 
 | Rol | Puede |
 |---|---|
-| **Socio** | Ver su plan, anotar sus pesos y su peso corporal, ver su progreso. |
+| **Socio** | Ver su plan o armarse uno propio, anotar sus pesos y su peso corporal, ver su progreso. |
 | **Empleado** (profe) | Armar e importar planes, invitar socios, asignarles plan, ver su progreso. |
 | **Dueño** | Todo lo del empleado, más sumar y quitar empleados. |
 | **Súper admin** | Crear gimnasios, mandarle el link al dueño, desactivarlos o borrarlos. |
