@@ -38,7 +38,7 @@ export function TrainingView({ plan, logs, onSaveLog, onDeleteLog, storageKey }:
         })}
       </nav>
       {plan.notes.length > 0 && (
-        <details className="notes"><summary>Indicaciones</summary><ul>{plan.notes.map((n, i) => <li key={i}>{n}</li>)}</ul></details>
+        <details className="notes"><summary>Indicaciones del profe</summary><ul>{plan.notes.map((n, i) => <li key={i}>{n}</li>)}</ul></details>
       )}
       <section className="list" aria-label={day.title}>
         {day.exercises.map((ex, i) => (

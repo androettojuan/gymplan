@@ -9,7 +9,7 @@ App para gimnasios: el dueño y los profes arman planes de entrenamiento y se lo
 | Súper admin (global) | Crear gimnasios y generar el link del dueño de cada uno. Se define por email en `firestore.rules` (`isSuper`) y en `src/lib/admin.ts`. |
 | `owner` (dueño) | Todo lo de `staff`, más: agregar y quitar empleados, cambiar roles, editar los datos del gimnasio. |
 | `staff` (empleado / profe) | Crear y editar plantillas y planes; invitar socios; ver socios y su progreso. |
-| `member` (socio) | Ver su plan o armarse uno propio, anotar sus pesos y su peso corporal, ver su progreso. |
+| `member` (socio) | Ver su plan, anotar sus pesos y su peso corporal, ver su progreso. |
 
 Una persona puede estar en varios gimnasios con roles distintos.
 
@@ -17,10 +17,10 @@ Una persona puede estar en varios gimnasios con roles distintos.
 
 - **Plantilla** (`templates`): un plan reutilizable, por ejemplo "Principiante 3 días".
 - **Asignación**: cada socio tiene en su membresía un `templateId`. Si la plantilla cambia, el socio ve el cambio.
-- **Plan personalizado** (`plans/{uid}`): si el profe ajusta el plan solo para un socio, se copia la plantilla y desde ahí es independiente. Si existe, tiene prioridad sobre la plantilla. El socio también puede escribirlo desde la app (**Mi plan**, ruta `/g/{gymId}/mi-plan`): las reglas lo dejan si es su propio documento y `updatedBy` es él mismo. Es un único documento, así que vale el último que guarda, sea el profe o el socio.
+- **Plan personalizado** (`plans/{uid}`): si el profe ajusta el plan solo para un socio, se copia la plantilla y desde ahí es independiente. Si existe, tiene prioridad sobre la plantilla.
 - Cada vez que se guarda una plantilla o un plan personalizado se guarda una versión en `versions`, para tener historial.
 - Los pesos del socio se guardan por **clave de ejercicio** (`exKey`). Si el plan cambia y el ejercicio sigue, el historial continúa.
-- Los planes se arman en un editor o se importan desde el PDF que usan hoy los gimnasios. Hay dos formatos: en lista (bloques "Entrenamiento N" con columnas Ejercicio / Video / Series / Reps / Descanso / Observaciones) y en grilla (una columna por día de la semana, un ejercicio por celda como "Nombre 3x10" y celdas "COMBINADOS" que abren un grupo hasta la próxima). Se detecta la grilla cuando una fila tiene más de un día de la semana.
+- Los planes se arman en un editor o se importan desde el PDF que usan hoy los gimnasios (planilla con columnas Ejercicio / Video / Series / Reps / Descanso / Observaciones).
 
 ## Datos (Firestore)
 

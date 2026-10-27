@@ -86,16 +86,11 @@ service cloud.firestore {
         }
       }
 
-      // A member's own plan: made by the coach for them, or by the member from the app.
       match /plans/{uid} {
         allow read: if (signedIn() && uid == me() && isMember(gymId)) || isStaff(gymId);
-        allow create, update: if isStaff(gymId)
-          || (signedIn() && uid == me() && isMember(gymId) && request.resource.data.updatedBy == me());
-        allow delete: if isStaff(gymId) || (signedIn() && uid == me() && isMember(gymId));
+        allow write: if isStaff(gymId);
         match /versions/{vId} {
-          allow read: if isStaff(gymId);
-          allow create: if isStaff(gymId)
-            || (signedIn() && uid == me() && isMember(gymId) && request.resource.data.updatedBy == me());
+          allow read, create: if isStaff(gymId);
         }
       }
     }
